@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+.pytest_cache/
+.env*
+!.env.example
+*.tsbuildinfo
+.DS_Store
+# กุญแจ Google Drive (ห้ามแชร์)
+client_secret*.json
+# สำเนา workflow ที่มีค่าโปรเจกต์จริง (ใช้ import เข้า n8n ของตัวเอง ไม่ขึ้น git)
+n8n/local/

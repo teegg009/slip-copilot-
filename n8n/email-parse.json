@@ -1,0 +1,433 @@
+{
+  "name": "Email Receipt Parser (personal)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "email-parse",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "66668d59-3a27-4c86-9b4b-8939dbccd838",
+      "name": "Email Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "71099367-8840-4dd7-a7f9-359afb3669f3"
+    },
+    {
+      "parameters": {
+        "jsCode": "// รับข้อมูลจากหน้าเว็บ (ส่งแบบ form เพื่อไม่ให้ต้องมี CORS preflight) แล้วตรวจขนาด/รูปแบบ\nconst raw = $input.first().json.body?.payload;\nlet p;\ntry { p = JSON.parse(raw); } catch (e) { return [{ json: { bad: 'invalid payload' } }]; }\nif (!p || typeof p !== 'object' || Array.isArray(p)) return [{ json: { bad: 'invalid payload' } }];\nconst token = String(p.token || '');\nconst msgs = (Array.isArray(p.messages) ? p.messages : []).filter(m => m && typeof m === 'object').slice(0, 25).map(m => ({\n  id: String(m.id || '').slice(0, 64), from: String(m.from || '').slice(0, 200), subject: String(m.subject || '').slice(0, 300),\n  date: String(m.date || '').slice(0, 60), text: String(m.text || '').slice(0, 6000),\n})).filter(m => m.id && m.text);\nif (!token || !msgs.length) return [{ json: { bad: 'no messages' } }];\nreturn [{ json: { token, messages: msgs } }];"
+      },
+      "id": "33801f4b-e006-440f-8031-accd7622b678",
+      "name": "Check Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "fad07a3d-7ea2-4654-a3c0-b20f49f92489",
+              "leftValue": "={{ $json.bad }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "4e61d24e-4a2d-4a1d-ad0a-38dc2bbd4ce9",
+      "name": "Input OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "url": "https://YOUR-PROJECT.supabase.co/auth/v1/user",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "YOUR_SUPABASE_PUBLISHABLE_KEY"
+            },
+            {
+              "name": "Authorization",
+              "value": "=Bearer {{ $json.token }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "a2e273b1-4a78-4490-b15f-f37816833df5",
+      "name": "Verify User",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        280
+      ],
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "31d87042-b64d-4226-9051-e5b99dd32d76",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "e8ff0d42-5005-4a1e-847b-1b87965dcda5",
+      "name": "User OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        880,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// หนึ่งอีเมลต่อหนึ่ง item (ส่งให้ AI ทีละฉบับ)\nconst input = $('Check Input').first().json;\nreturn input.messages.map(m => ({ json: { ...m, userId: $input.first().json.id } }));"
+      },
+      "id": "acff2abf-4585-4a58-b47b-44afa20f18a9",
+      "name": "Split",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1100,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.1-flash-lite"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You read ONE email and decide whether it is a purchase receipt, order confirmation, invoice or payment confirmation (Thai and/or English). Marketing, newsletters, shipping or delivery updates, security alerts, bank statements and reminders are NOT receipts. Return ONLY valid JSON, no markdown:\n{\"is_receipt\":false,\"date\":\"YYYY-MM-DD\",\"vendor\":\"\",\"total\":0,\"currency\":\"THB\",\"reference_no\":\"\",\"confidence\":0.0,\"category\":\"food|transport|shopping|utilities|health|other\",\"items\":[{\"name\":\"\",\"qty\":1,\"amount\":0,\"category\":\"food|transport|shopping|utilities|health|other\"}]}\nRules: is_receipt is true only if the email proves a payment or purchase that already happened. date = the purchase/payment date (YYYY-MM-DD); if not stated use the email date. Convert Buddhist Era years to Christian Era by subtracting 543. total = the amount actually charged, as a number. currency = ISO code (THB, USD...). vendor = the merchant or service name, not the email sender's person name. reference_no = order, invoice or receipt number if present, copied exactly, else null. items = purchased lines if listed (name, qty, amount), else one item named after the vendor. confidence = 0 to 1 how sure you are about total, date and vendor. Never invent values; use null when not stated. If unsure it is a receipt, set is_receipt to false.\n\nEmail from: {{ $json.from }}\nSubject: {{ $json.subject }}\nEmail date: {{ $json.date }}\n-----\n{{ $json.text }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "388e2fa6-951c-4418-9099-d50ccfef0dcd",
+      "name": "Read Email",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        1320,
+        260
+      ],
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HLfXjUFUNgjzZoua",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 2,
+      "waitBetweenTries": 3000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// แปลงผลจาก AI เป็นรายการที่ตรวจสอบแล้ว (AI อ่านอย่างเดียว ตรวจ/แปลง/คำนวณทำด้วยโค้ด)\nconst m = $('Split').item.json;\nconst out = $json;\nconst base = { id: m.id, subject: m.subject, from: m.from };\nconst skip = (reason) => ({ json: { ...base, ok: false, reason } });\nconst CATS = ['food', 'transport', 'shopping', 'utilities', 'health', 'other'];\nconst r2 = n => Math.round(n * 100) / 100;\nconst toNum = v => {\n  if (typeof v === 'number') return v;\n  const x = String(v ?? '').replace(/,/g, '').match(/\\d+(\\.\\d+)?/);\n  return x ? Number(x[0]) : NaN;\n};\n\nconst raw = (out.content?.parts || []).map(p => p.text || '').join('') || out.text || '';\nif (!raw) return skip('ai_failed');\nlet d;\ntry { d = JSON.parse(String(raw).replace(/```json|```/g, '').trim()); } catch (e) { return skip('ai_failed'); }\nif (d.is_receipt !== true) return skip('not_receipt');\n\nconst items = (Array.isArray(d.items) ? d.items : []).slice(0, 50).map(i => ({\n  name: String(i.name || '-').slice(0, 160), qty: Number(i.qty) > 0 ? Number(i.qty) : 1, amount: r2(toNum(i.amount) || 0),\n  category: CATS.includes(i.category) ? i.category : (CATS.includes(d.category) ? d.category : 'other'),\n})).filter(i => i.amount > 0);\nlet total = r2(toNum(d.total));\nif (!(total > 0)) total = r2(items.reduce((s, i) => s + i.amount, 0));\nif (!(total > 0)) return skip('no_amount');\n\nlet date = null;\nconst mm = String(d.date || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);\nif (mm) {\n  let y = Number(mm[1]); const mo = Number(mm[2]), da = Number(mm[3]);\n  if (y > 2400) y -= 543;\n  const t = new Date(Date.UTC(y, mo - 1, da));\n  if (t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === da) date = `${y}-${mm[2]}-${mm[3]}`;\n}\nif (!date) {   // ใช้วันที่ของอีเมลแทน\n  const dt = new Date(m.date);\n  if (!isNaN(dt)) date = DateTime.fromJSDate(dt).setZone('Asia/Bangkok').toFormat('yyyy-MM-dd');\n}\nif (!date) return skip('no_date');\nif (date > $now.toFormat('yyyy-MM-dd')) return skip('future_date');\n\nconst byCat = {};\nfor (const i of items) byCat[i.category] = (byCat[i.category] || 0) + i.amount;\nconst top = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];\nlet conf = Number(d.confidence);\nconf = Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : 0.5;\nconst cur = String(d.currency || 'THB').toUpperCase().slice(0, 3);\nreturn { json: { ...base, ok: true, vendor: String(d.vendor || '').trim().slice(0, 160) || null, date, amount: total, currency: cur,\n  category: top ? top[0] : (CATS.includes(d.category) ? d.category : 'other'), items,\n  ref: String(d.reference_no ?? '').trim().slice(0, 64) || null, confidence: conf } };",
+        "mode": "runOnceForEachItem"
+      },
+      "id": "bc5e4b51-195b-4023-9a06-ac64708eeb06",
+      "name": "Parse Email",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1540,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// รวมผลทุกฉบับเป็นก้อนเดียว (ไม่ส่งข้อความอีเมลต้นฉบับกลับไป)\nreturn [{ json: { ok: true, results: $input.all().map(i => i.json) } }];"
+      },
+      "id": "72e3b919-9384-45a5-84b0-11bc70056b80",
+      "name": "Collect",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1760,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ $json }}",
+        "options": {
+          "responseCode": 200,
+          "responseHeaders": {
+            "parameters": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "={{ [\"http://localhost:3000\", \"http://127.0.0.1:3000\", \"http://localhost:3001\", \"http://127.0.0.1:3001\"].includes($('Email Webhook').first().json.headers.origin) ? $('Email Webhook').first().json.headers.origin : \"http://localhost:3000\" }}"
+              },
+              {
+                "name": "Vary",
+                "value": "Origin"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "321f309e-6efe-4b9a-bd27-cfbe5539ea17",
+      "name": "Reply OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1980,
+        260
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":false,\"error\":\"bad_request\"}",
+        "options": {
+          "responseCode": 400,
+          "responseHeaders": {
+            "parameters": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "={{ [\"http://localhost:3000\", \"http://127.0.0.1:3000\", \"http://localhost:3001\", \"http://127.0.0.1:3001\"].includes($('Email Webhook').first().json.headers.origin) ? $('Email Webhook').first().json.headers.origin : \"http://localhost:3000\" }}"
+              },
+              {
+                "name": "Vary",
+                "value": "Origin"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "da06e846-754b-4a68-8f14-bad7517a879c",
+      "name": "Reply 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "{\"ok\":false,\"error\":\"unauthorized\"}",
+        "options": {
+          "responseCode": 401,
+          "responseHeaders": {
+            "parameters": [
+              {
+                "name": "Access-Control-Allow-Origin",
+                "value": "={{ [\"http://localhost:3000\", \"http://127.0.0.1:3000\", \"http://localhost:3001\", \"http://127.0.0.1:3001\"].includes($('Email Webhook').first().json.headers.origin) ? $('Email Webhook').first().json.headers.origin : \"http://localhost:3000\" }}"
+              },
+              {
+                "name": "Vary",
+                "value": "Origin"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      },
+      "id": "65180708-52bf-4258-ba93-8fc25e81f2b7",
+      "name": "Reply 401",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1100,
+        480
+      ]
+    }
+  ],
+  "connections": {
+    "Email Webhook": {
+      "main": [
+        [
+          {
+            "node": "Check Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Input": {
+      "main": [
+        [
+          {
+            "node": "Input OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Input OK?": {
+      "main": [
+        [
+          {
+            "node": "Verify User",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify User": {
+      "main": [
+        [
+          {
+            "node": "User OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "User OK?": {
+      "main": [
+        [
+          {
+            "node": "Split",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply 401",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split": {
+      "main": [
+        [
+          {
+            "node": "Read Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Email": {
+      "main": [
+        [
+          {
+            "node": "Parse Email",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email": {
+      "main": [
+        [
+          {
+            "node": "Collect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Collect": {
+      "main": [
+        [
+          {
+            "node": "Reply OK",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

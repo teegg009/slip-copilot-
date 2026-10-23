@@ -1,0 +1,942 @@
+{
+  "name": "LINE Receipt Agent v3 (multi-workspace)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "line-v3",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "5eb234a8-7720-493b-9207-b67469f65a70",
+      "name": "LINE Webhook v3",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "78fa3d4e-8b03-4810-842f-7ee4b3f9755d"
+    },
+    {
+      "parameters": {
+        "jsCode": "// รับ body ดิบ (ต้องใช้ตรวจลายเซ็น LINE: ตัวอักษรต้องตรงกับที่ LINE ส่งมาเป๊ะ)\nconst item = $input.first();\nconst buf = await this.helpers.getBinaryDataBuffer(0, 'data');\nreturn [{ json: { raw: buf.toString('utf8'), sigHeader: item.json.headers?.['x-line-signature'] || '' } }];"
+      },
+      "id": "31258172-e577-40af-82fb-1bcf4bd3cec7",
+      "name": "Raw Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "action": "hmac",
+        "type": "SHA256",
+        "value": "={{ $json.raw }}",
+        "dataPropertyName": "signature",
+        "secret": "REPLACE_WITH_LINE_CHANNEL_SECRET",
+        "encoding": "base64"
+      },
+      "id": "ccb46f88-02fb-4616-bb43-7178cbc4a728",
+      "name": "Sign",
+      "type": "n8n-nodes-base.crypto",
+      "typeVersion": 1,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "7ed132d4-0506-4ae8-81cb-5f1246db8105",
+              "leftValue": "={{ $json.signature }}",
+              "rightValue": "={{ $json.sigHeader }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "c0b13ea5-bb6b-4b20-9016-c253ce980e11",
+              "leftValue": "={{ $json.sigHeader }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "82e628cd-5b53-4749-9c00-a345169da4fc",
+      "name": "Signature OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        660,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// แปลง event ของ LINE และแยกคำสั่ง (LINE Verify ส่ง events ว่าง -> ไม่ทำอะไร)\nconst body = JSON.parse($input.first().json.raw);\nconst ev = (body.events || [])[0];\nif (!ev || !ev.replyToken) return [];\nconst msgType = ev.type === 'message' ? (ev.message?.type || '') : '';\nconst text = msgType === 'text' ? String(ev.message.text).trim() : '';\nlet cmd = 'other', arg = '', m;\nif (msgType === 'image') { cmd = 'image'; arg = String(ev.message.id); }\nelse if ((m = text.match(/^(?:ผูก|เข้า\\s*ร่วม|join|link)[\\s:：#-]*(\\d{6})$/i))) { cmd = 'link'; arg = m[1]; }\nelse if ((m = text.match(/^ใช้\\s*(.+)$/))) { cmd = 'use'; arg = m[1].trim(); }\nreturn [{ json: { replyToken: ev.replyToken, userId: ev.source?.userId || '', text, cmd, arg,\n  eventType: ev.type, msgType } }];"
+      },
+      "id": "a375b2f6-5280-4ffa-805a-03d9cec78cf5",
+      "name": "Parse Event",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        280
+      ]
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "06038ee1-3e1e-4235-96de-410d27eec8f7",
+                    "leftValue": "={{ $json.cmd }}",
+                    "rightValue": "link",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "link"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "39f19fdd-987f-4716-b4bc-0a9b07ce1228",
+                    "leftValue": "={{ $json.cmd }}",
+                    "rightValue": "join",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "join"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "b7806d61-4f06-471c-a95f-869326702fca",
+                    "leftValue": "={{ $json.cmd }}",
+                    "rightValue": "use",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "use"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "20cfec3b-53b1-4765-9938-39d0d8ad6bea",
+                    "leftValue": "={{ $json.cmd }}",
+                    "rightValue": "image",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "image"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 1
+                },
+                "conditions": [
+                  {
+                    "id": "9e1bdc2b-5479-41dd-a142-97a4666ddc95",
+                    "leftValue": "={{ $json.cmd }}",
+                    "rightValue": "other",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "other"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "50f9f54a-4268-4ae1-8b99-cc16e847d97c",
+      "name": "Command",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3,
+      "position": [
+        1100,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api.line.me/v2/bot/profile/{{ $json.userId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "id": "57519341-c77b-44cf-a5b9-50e078f3f7a4",
+      "name": "Get Profile",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        200
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "iSyCY88qJIsdquMg",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/line_connect",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_line_user_id: $('Parse Event').first().json.userId, p_code: $('Parse Event').first().json.arg, p_display_name: $('Get Profile').first().json.displayName ?? null }) }}",
+        "options": {}
+      },
+      "id": "97628665-efce-4e61-ab0c-a891e41ae8ff",
+      "name": "RPC connect",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        200
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/line_set_workspace",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_line_user_id: $json.userId, p_target: $json.arg }) }}",
+        "options": {}
+      },
+      "id": "823a9ab0-b255-4764-9843-e2f8700e2ac4",
+      "name": "RPC use",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        340
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/resolve_line_user",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_line_user_id: $json.userId }) }}",
+        "options": {}
+      },
+      "id": "81b3f63d-014a-4830-bd83-4719a1b61262",
+      "name": "RPC resolve",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        860
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/chat/loading/start",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ chatId: $json.userId, loadingSeconds: 30 }) }}",
+        "options": {}
+      },
+      "id": "61d0d117-cafc-4935-a031-d6269f309d4e",
+      "name": "Show Typing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1340,
+        520
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "iSyCY88qJIsdquMg",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-PROJECT.supabase.co/rest/v1/rpc/resolve_line_user",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ p_line_user_id: $('Parse Event').first().json.userId }) }}",
+        "options": {}
+      },
+      "id": "687e0ebc-5e54-422e-a2a4-1932942126e2",
+      "name": "RPC resolve img",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1560,
+        520
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "6a9f199c-d1e4-4e3d-81d8-dd032925e957",
+              "leftValue": "={{ $json.user_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "95b0ec0f-1432-49dd-ad5f-d2542dd25775",
+      "name": "Linked?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1780,
+        520
+      ]
+    },
+    {
+      "parameters": {
+        "url": "=https://api-data.line.me/v2/bot/message/{{ $('Parse Event').first().json.arg }}/content",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "d2632a80-e4bd-4dcf-88a0-eeddf8de1a02",
+      "name": "Get Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2000,
+        500
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "iSyCY88qJIsdquMg",
+          "name": "Header Auth account"
+        }
+      },
+      "onError": "continueErrorOutput"
+    },
+    {
+      "parameters": {
+        "resource": "image",
+        "operation": "analyze",
+        "modelId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "models/gemini-3.1-flash-lite"
+        },
+        "text": "Extract EVERY purchased line item from this receipt or payment slip (Thai and/or English). Return ONLY valid JSON, no markdown:\n{\"is_receipt\":true,\"date\":\"YYYY-MM-DD\",\"time\":\"HH:MM\",\"vendor\":\"\",\"total\":0,\"tax\":0,\"currency\":\"THB\",\"reference_no\":\"\",\"confidence\":0.0,\"category\":\"food|transport|shopping|utilities|health|other\",\"items\":[{\"name\":\"\",\"qty\":1,\"amount\":0,\"category\":\"food|transport|shopping|utilities|health|other\"}]}\nRules: one object in items per line on the receipt; amount = line total (qty x unit price); skip subtotal, VAT, discount, change and payment lines; for a bank transfer slip use ONE item named after the recipient with the transferred amount; use null if unreadable; convert Buddhist Era years (พ.ศ.) to Christian Era by subtracting 543; Thai receipts often print a 2-digit year, e.g. 06/10/69 means 2569 BE = 2026-10-06. reference_no = the transaction/reference number printed on a bank slip, or the receipt/invoice number; copy it EXACTLY, keeping upper/lower case; null if none is printed. confidence = 0 to 1, how sure you are that date, total and vendor were read correctly. If the image is not a receipt, bill, invoice or payment slip, or nothing on it is readable, return {\"date\":null,\"vendor\":null,\"total\":0,\"items\":[]} - never invent vendors, items or amounts. Set is_receipt to false (and items to []) for photos of people, places, screenshots, blank or unreadable images - only true when you can actually read a store/recipient name or amounts on it.",
+        "inputType": "binary",
+        "options": {}
+      },
+      "id": "9ce9b26e-6883-4d53-840a-a5f6323f76bf",
+      "name": "Scan Receipt",
+      "type": "@n8n/n8n-nodes-langchain.googleGemini",
+      "typeVersion": 1,
+      "position": [
+        2220,
+        480
+      ],
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "credentials": {
+        "googlePalmApi": {
+          "id": "HLfXjUFUNgjzZoua",
+          "name": "Google Gemini(PaLM) Api account"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "jsCode": "// แปลงผลจาก Gemini เป็นรายการที่ตรวจสอบแล้ว (AI อ่านอย่างเดียว ตรวจ/แปลง/คำนวณทำด้วยโค้ด)\nconst out = $input.first().json;\nconst ctx = $('Parse Event').first().json;\nconst me = $('RPC resolve img').first().json;\nconst fail = (kind, message) => [{ json: { kind, message } }];\nconst CATS = ['food', 'transport', 'shopping', 'utilities', 'health', 'other'];\nconst r2 = n => Math.round(n * 100) / 100;\nconst toNum = v => {\n  if (typeof v === 'number') return v;\n  const m = String(v ?? '').replace(/,/g, '').match(/\\d+(\\.\\d+)?/);\n  return m ? Number(m[0]) : NaN;\n};\n\nconst raw = (out.content?.parts || []).map(p => p.text || '').join('') || out.text || '';\nif (!raw) return fail('ai_failed', 'AI ไม่ตอบกลับ');\nlet d;\ntry { d = JSON.parse(String(raw).replace(/```json|```/g, '').trim()); }\ncatch (e) { return fail('ai_failed', 'อ่านผลจาก AI ไม่ได้'); }\nif (d.is_receipt === false) return fail('not_receipt', 'ไม่ใช่ใบเสร็จหรือสลิป');\n\nconst items = (Array.isArray(d.items) ? d.items : []).slice(0, 50).map(i => ({\n  name: String(i.name || '-').slice(0, 160), qty: Number(i.qty) > 0 ? Number(i.qty) : 1,\n  amount: r2(toNum(i.amount) || 0),\n  category: CATS.includes(i.category) ? i.category : (CATS.includes(d.category) ? d.category : 'other'),\n})).filter(i => i.amount > 0);\n\nlet total = r2(toNum(d.total));\nif (!(total > 0)) total = r2(items.reduce((s, i) => s + i.amount, 0));\nif (!(total > 0)) return fail('invalid', 'อ่านยอดเงินไม่ได้');\n\nconst mm = String(d.date || '').match(/^(\\d{4})-(\\d{2})-(\\d{2})$/);\nlet date = null;\nif (mm) {\n  let y = Number(mm[1]); const mo = Number(mm[2]), da = Number(mm[3]);\n  if (y > 2400) y -= 543;\n  const t = new Date(Date.UTC(y, mo - 1, da));\n  if (t.getUTCFullYear() === y && t.getUTCMonth() === mo - 1 && t.getUTCDate() === da) date = `${y}-${mm[2]}-${mm[3]}`;\n}\nif (!date) return fail('invalid', 'อ่านวันที่ไม่ได้');\n\nconst issues = [];\nif (date > $now.toFormat('yyyy-MM-dd')) issues.push(`วันที่อยู่ในอนาคต (${date})`);\nlet time = String(d.time || '').trim();\nif (/^\\d{2}:\\d{2}:\\d{2}$/.test(time)) time = time.slice(0, 5);\nif (!/^([01]\\d|2[0-3]):[0-5]\\d$/.test(time)) time = null;\n\n// หมวดหลัก = หมวดที่ยอดรวมสูงสุด\nconst byCat = {};\nfor (const i of items) byCat[i.category] = (byCat[i.category] || 0) + i.amount;\nconst top = Object.entries(byCat).sort((a, b) => b[1] - a[1])[0];\nconst category = top ? top[0] : (CATS.includes(d.category) ? d.category : 'other');\n\nlet ref = String(d.reference_no ?? '').trim();\nif (ref.length < 4 || ref.length > 64) ref = '';\nlet conf = Number(d.confidence);\nconf = Number.isFinite(conf) ? Math.min(1, Math.max(0, conf)) : 0.5;\nif (issues.length) conf = Math.min(conf, 0.5);   // มีข้อสงสัย -> ให้ฐานข้อมูลติดธงรอตรวจ\n\nconst path = `${me.workspace_id}/${ctx.arg}.jpg`;\nreturn [{\n  json: {\n    record: {\n      workspace_id: me.workspace_id, submitter_id: me.user_id, ref_no: ref || null,\n      txn_date: date, txn_time: time, vendor: String(d.vendor || '').trim().slice(0, 160) || null,\n      amount: total, category, items, source: 'line', confidence: conf,\n      review_reason: issues.length ? issues.join('; ') : null, image_path: path,\n    },\n    path,\n  },\n  binary: $('Get Image').first().binary,\n}];"
+      },
+      "id": "15132d6c-5678-4405-bf45-3fef710aac4c",
+      "name": "Parse Receipt",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        2440,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "ecbbd1dc-78df-4ed1-822f-093dbd0309b4",
+              "leftValue": "={{ $json.kind }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "empty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "54949471-c0ce-48f2-85c0-f9600d9a04d5",
+      "name": "Receipt OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        2660,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://YOUR-PROJECT.supabase.co/storage/v1/object/receipts/' + $json.path }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-upsert",
+              "value": "true"
+            }
+          ]
+        },
+        "sendBody": true,
+        "contentType": "binaryData",
+        "inputDataFieldName": "data",
+        "options": {}
+      },
+      "id": "57192d11-938f-433d-ac37-1b039c1ee8af",
+      "name": "Upload Image",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        2880,
+        460
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      },
+      "onError": "continueRegularOutput"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://YOUR-PROJECT.supabase.co/rest/v1/receipts",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=representation"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ ...$('Parse Receipt').first().json.record, image_path: $json.Key ? $('Parse Receipt').first().json.record.image_path : null }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "9179becd-c9ee-49a2-8740-4795c2f35feb",
+      "name": "Insert Receipt",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3100,
+        460
+      ],
+      "credentials": {
+        "supabaseApi": {
+          "id": "Sx7OgAogBdgyfLDs",
+          "name": "Supabase slip-copilot"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// ทุกสายมารวมที่นี่ สร้างการ์ดตอบตามคำสั่ง (cmd) และผลที่ได้\nconst ctx = $('Parse Event').first().json;\nconst res = $input.first().json || {};\nconst WEB_URL = '';   // ใส่ลิงก์ https ของ dashboard เมื่อ deploy แล้ว จะมีปุ่มเปิดในการ์ด\nconst GREEN = '#06C755', RED = '#E53935', ORANGE = '#FB8C00';\nconst ROLE = { admin: 'แอดมิน', accountant: 'ฝ่ายบัญชี', employee: 'พนักงาน' };\nconst CAT = { food: '🍜 อาหาร', transport: '🚗 เดินทาง', shopping: '🛍️ ช้อปปิ้ง', utilities: '💡 ค่าน้ำไฟ/บริการ', health: '💊 สุขภาพ', other: '📦 อื่นๆ' };\nconst TH_M = ['', 'ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];\nconst thDate = iso => { const [y, m, d] = String(iso).split('-'); return `${+d} ${TH_M[+m]} ${+y + 543}`; };\nconst baht = n => Number(n || 0).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });\nconst HOWTO = ['บอทนี้ใช้ได้เฉพาะคนที่ได้รับเชิญ', 'พิมพ์รหัสเชิญ 6 หลักที่เจ้าของส่งให้ เช่น: ผูก 123456', 'ไม่ต้องล็อกอิน ไม่ต้องกรอกรหัสผ่านหรือข้อมูลส่วนตัวใดๆ'];\n\nfunction card(color, title, lines, sub, extra, footer) {\n  const body = [\n    ...lines.map(t => ({ type: 'text', text: t, size: 'sm', wrap: true, color: '#444444' })),\n    ...(extra || []),\n  ];\n  const bubble = {\n    type: 'bubble', size: 'kilo',\n    header: { type: 'box', layout: 'vertical', backgroundColor: color, paddingAll: '16px', contents: [\n      { type: 'text', text: title, color: '#ffffff', weight: 'bold', size: 'md', wrap: true },\n      ...(sub ? [{ type: 'text', text: sub, color: '#ffffffcc', size: 'xs', wrap: true, margin: 'sm' }] : []) ] },\n    body: { type: 'box', layout: 'vertical', spacing: 'sm', contents: body },\n  };\n  if (footer && footer.length) bubble.footer = { type: 'box', layout: 'vertical', spacing: 'sm', contents: footer };\n  return { type: 'flex', altText: title, contents: bubble };\n}\n\nfunction savedCard(r) {\n  const ok = r.status === 'approved';\n  const rows = (Array.isArray(r.items) ? r.items : []).slice(0, 6).map(i => ({\n    type: 'box', layout: 'horizontal', spacing: 'sm', contents: [\n      { type: 'text', text: String(i.name || '-') + (Number(i.qty) > 1 ? ` x${i.qty}` : ''), size: 'xs', color: '#666666', flex: 5, wrap: true },\n      { type: 'text', text: `฿${baht(i.amount)}`, size: 'xs', color: '#111111', align: 'end', flex: 2 } ] }));\n  if ((r.items || []).length > 6) rows.push({ type: 'text', text: `และอีก ${r.items.length - 6} รายการ`, size: 'xs', color: '#aaaaaa' });\n  const extra = [\n    { type: 'text', text: r.vendor || 'ไม่ระบุร้าน', weight: 'bold', size: 'lg', wrap: true },\n    { type: 'text', text: `฿${baht(r.amount)}`, weight: 'bold', size: 'xxl', color: ok ? GREEN : ORANGE },\n    { type: 'text', text: CAT[r.category] || r.category, size: 'sm', color: '#666666' },\n    ...(rows.length ? [{ type: 'separator', margin: 'md' }, ...rows] : []),\n    ...(r.review_reason ? [{ type: 'text', text: `⚠ ${r.review_reason}`, size: 'xs', color: ORANGE, wrap: true, margin: 'md' }] : []),\n  ];\n  const footer = /^https:\\/\\//.test(WEB_URL)\n    ? [{ type: 'button', style: 'link', height: 'sm', action: { type: 'uri', label: '🌐 เปิด Dashboard', uri: WEB_URL } }] : [];\n  const where = (() => { try { return $('RPC resolve img').first().json.workspace_name; } catch (e) { return ''; } })();\n  return card(ok ? GREEN : ORANGE, ok ? '✅ บันทึกสลิปแล้ว' : '⏳ บันทึกแล้ว · รอตรวจ',\n    [], `${thDate(r.txn_date)}${r.txn_time ? ' ' + String(r.txn_time).slice(0, 5) : ''}${where ? ' · ' + where : ''}`, extra, footer);\n}\n\nfunction imageCard() {\n  if (res.id && res.workspace_id) return savedCard(res);\n  if (res.code === '23505') return card(ORANGE, 'ℹ️ สลิปนี้เคยบันทึกแล้ว', ['ระบบพบรหัสอ้างอิงเดียวกันในที่เก็บนี้ จึงไม่บันทึกซ้ำ']);\n  if (res.kind === 'not_receipt') return card(RED, '❌ ไม่ใช่ใบเสร็จหรือสลิป', ['ลองถ่ายรูปให้เห็นชื่อร้านและยอดเงินชัดๆ แล้วส่งใหม่']);\n  if (res.kind === 'invalid') return card(RED, `❌ ${res.message || 'อ่านข้อมูลไม่ครบ'}`, ['ลองถ่ายรูปให้ชัดขึ้นแล้วส่งใหม่']);\n  if (res.kind === 'ai_failed') return card(ORANGE, '⏳ ตอนนี้ AI ติดขัด', ['ลองส่งใหม่อีกครั้งใน 1-2 นาที']);\n  if (res.code) return card(RED, '❌ บันทึกไม่สำเร็จ', ['มีข้อผิดพลาดตอนบันทึก ลองส่งใหม่อีกครั้ง']);\n  if (!res.user_id) {\n    let downloadFailed = false;\n    try { downloadFailed = $('Get Image').isExecuted; } catch (e) { /* node ไม่ได้รัน */ }\n    return downloadFailed\n      ? card(ORANGE, '⏳ ดึงรูปจาก LINE ไม่สำเร็จ', ['ลองส่งรูปใหม่อีกครั้ง'])\n      : card(ORANGE, 'ต้องมีรหัสเชิญก่อนส่งสลิป', HOWTO);\n  }\n  return card(ORANGE, '❌ ประมวลผลไม่สำเร็จ', ['ลองส่งใหม่อีกครั้ง']);\n}\n\nlet msg;\nswitch (ctx.cmd) {\n  case 'link':\n  case 'join':\n    if (res.error === 'too_many_attempts')\n      msg = card(ORANGE, 'ลองรหัสผิดหลายครั้ง', ['กรุณารอ 10 นาทีแล้วลองใหม่']);\n    else if (res.error === 'already_linked')\n      msg = card(ORANGE, 'LINE นี้ผูกกับบัญชีอื่นไว้แล้ว', ['ไม่สามารถผูกทับได้', 'ถ้าต้องการเปลี่ยนบัญชี ให้ติดต่อเจ้าของระบบ']);\n    else if (res.ok && res.kind === 'join')\n      msg = card(GREEN, `✅ เข้าร่วม ${res.workspace_name} แล้ว`, [`บทบาท: ${ROLE[res.role] || res.role}`, 'ส่งรูปสลิปมาได้เลย 📷 สลิปจะเข้าบริษัทนี้', 'พิมพ์ \"ใช้ส่วนตัว\" เพื่อสลับไปที่เก็บส่วนตัว']);\n    else if (res.ok)\n      msg = card(GREEN, '✅ เชื่อมบัญชีแล้ว', ['ส่งรูปสลิปมาได้เลย 📷', 'พิมพ์ \"ใช้ส่วนตัว\" หรือ \"ใช้ <ชื่อบริษัท>\" เพื่อเลือกที่เก็บ']);\n    else\n      msg = card(RED, '❌ รหัสไม่ถูกต้องหรือหมดอายุ', ['รหัสเชิญบริษัทใช้ได้ 7 วัน รหัสจากเว็บใช้ได้ 10 นาที และใช้ได้ครั้งเดียว', 'ตรวจเลข 6 หลักแล้วพิมพ์ใหม่ เช่น ผูก 123456']);\n    break;\n  case 'use':\n    if (res.ok) msg = card(GREEN, `✅ ส่งสลิปเข้า ${res.workspace_name}`, ['สลิปที่ส่งจากนี้จะถูกบันทึกที่นี่']);\n    else if (res.error === 'not_linked') msg = card(ORANGE, 'ต้องมีรหัสเชิญก่อนใช้งาน', HOWTO);\n    else msg = card(ORANGE, 'ไม่พบที่เก็บชื่อนี้', ['ที่ใช้ได้: ' + ((res.options || []).join(', ') || '-'), 'หรือพิมพ์ \"ใช้ส่วนตัว\"']);\n    break;\n  case 'image':\n    msg = imageCard();\n    break;\n  default:\n    msg = res.user_id\n      ? card(GREEN, '👋 พร้อมใช้งาน', [`ที่เก็บตอนนี้: ${res.workspace_name} (${ROLE[res.role] || res.role})`, 'ส่งรูปสลิปมาได้เลย 📷'])\n      : card(GREEN, '👋 สวัสดีครับ', [...HOWTO, 'สลิปที่ส่งจะถูกอ่านด้วย AI และเจ้าของบริษัทที่เชิญคุณจะเห็นรายการ']);\n}\nreturn [{ json: { replyToken: ctx.replyToken, messages: [msg] } }];"
+      },
+      "id": "290689e9-7434-4494-9b68-8a98fbb21a21",
+      "name": "Build Reply",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        3340,
+        380
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.line.me/v2/bot/message/reply",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ replyToken: $json.replyToken, messages: $json.messages }) }}",
+        "options": {}
+      },
+      "id": "57b7eee0-1488-478f-8ee7-f37a59317f59",
+      "name": "Send Reply v3",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        3560,
+        380
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "iSyCY88qJIsdquMg",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "LINE Webhook v3": {
+      "main": [
+        [
+          {
+            "node": "Raw Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Raw Body": {
+      "main": [
+        [
+          {
+            "node": "Sign",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sign": {
+      "main": [
+        [
+          {
+            "node": "Signature OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Signature OK?": {
+      "main": [
+        [
+          {
+            "node": "Parse Event",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Parse Event": {
+      "main": [
+        [
+          {
+            "node": "Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Command": {
+      "main": [
+        [
+          {
+            "node": "Get Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get Profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RPC use",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Show Typing",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "RPC resolve",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Show Typing": {
+      "main": [
+        [
+          {
+            "node": "RPC resolve img",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Profile": {
+      "main": [
+        [
+          {
+            "node": "RPC connect",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC connect": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC use": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC resolve": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "RPC resolve img": {
+      "main": [
+        [
+          {
+            "node": "Linked?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Linked?": {
+      "main": [
+        [
+          {
+            "node": "Get Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Image": {
+      "main": [
+        [
+          {
+            "node": "Scan Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Scan Receipt": {
+      "main": [
+        [
+          {
+            "node": "Parse Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Receipt": {
+      "main": [
+        [
+          {
+            "node": "Receipt OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Receipt OK?": {
+      "main": [
+        [
+          {
+            "node": "Upload Image",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload Image": {
+      "main": [
+        [
+          {
+            "node": "Insert Receipt",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Insert Receipt": {
+      "main": [
+        [
+          {
+            "node": "Build Reply",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Reply": {
+      "main": [
+        [
+          {
+            "node": "Send Reply v3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}
