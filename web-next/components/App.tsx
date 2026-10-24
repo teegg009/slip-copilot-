@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { I18nProvider, useI18n } from "@/lib/i18n";
 import { useDashboard } from "@/lib/useDashboard";
 import type { Receipt } from "@/lib/types";
@@ -21,6 +21,13 @@ function Dashboard() {
   const [editing, setEditing] = useState<Receipt | null>(null);
   const [deleting, setDeleting] = useState<Receipt | null>(null);
   const [viewing, setViewing] = useState<Receipt | null>(null);
+
+  // ออกจากระบบ: ปิดหน้าต่าง/เมนูที่ค้างอยู่ทั้งหมด
+  const { user, closeMail } = d;
+  useEffect(() => {
+    if (user) return;
+    setEditing(null); setDeleting(null); setViewing(null); setSidebarOpen(false); setLinePopOpen(false); closeMail();
+  }, [user]);   // closeMail เปลี่ยนทุกครั้งที่วาดใหม่ จึงไม่ใส่ใน deps
 
   const closeImage = useCallback(() => setViewing(null), []);
   const getUrl = d.signedImageUrl;
@@ -66,9 +73,9 @@ function Dashboard() {
             onReview={(id, act) => void d.review(id, act)} onEdit={setEditing} onDelete={setDeleting} onView={setViewing}
           />
           <div className="grid-3">
-            <OrgCard onCreate={d.createOrg} />
+            <OrgCard busy={!!d.busy.org} onCreate={d.createOrg} />
             {d.personal && <MailCard status={d.mailStatus} busy={!!d.busy.mail} onScan={(days) => void d.scanMail(days)} />}
-            {d.showInvite && <InviteCard invites={d.invites} error={d.invitesError} onCreate={(r) => void d.createInvite(r)} />}
+            {d.showInvite && <InviteCard invites={d.invites} error={d.invitesError} busy={!!d.busy.invite} onCreate={(r) => void d.createInvite(r)} />}
           </div>
         </main>
       </div>

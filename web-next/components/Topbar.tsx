@@ -58,13 +58,14 @@ export function Topbar(p: Props) {
   const popRef = useRef<HTMLDivElement>(null);
   const chipRef = useRef<HTMLButtonElement>(null);
   const menuRef = useRef<HTMLDivElement>(null);
+  const avatarRef = useRef<HTMLButtonElement>(null);
   const { setLinePopOpen } = p;
 
   // คลิกนอกกล่อง / กด Esc = ปิดเมนูที่เปิดอยู่
   useEffect(() => {
     const onClick = (e: MouseEvent) => {
       const n = e.target as Node;
-      if (!menuRef.current?.contains(n)) setMenuOpen(false);
+      if (!menuRef.current?.contains(n) && !avatarRef.current?.contains(n)) setMenuOpen(false);
       if (!popRef.current?.contains(n) && !chipRef.current?.contains(n)) setLinePopOpen(false);
     };
     const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") { setMenuOpen(false); setLinePopOpen(false); } };
@@ -98,7 +99,7 @@ export function Topbar(p: Props) {
         <Icon id={theme === "dark" ? "i-sun" : "i-moon"} />
       </button>
       <button className="lang ghost" aria-label="Language" onClick={() => setLang(lang === "en" ? "th" : "en")}>{lang === "en" ? "ไทย" : "EN"}</button>
-      <button className="avatar-btn" aria-label="Account" aria-haspopup="true" onClick={(e) => { e.stopPropagation(); p.setLinePopOpen(false); setMenuOpen(!menuOpen); }}>
+      <button ref={avatarRef} className="avatar-btn" aria-label="Account" aria-haspopup="true" onClick={(e) => { e.stopPropagation(); p.setLinePopOpen(false); setMenuOpen(!menuOpen); }}>
         <div className="avatar">{avatar}</div>
       </button>
 

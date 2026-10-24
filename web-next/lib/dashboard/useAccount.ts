@@ -77,7 +77,13 @@ export function useAccount({ live, t, toast, setBusy }: Shared, { load: loadRece
     const u = session?.user ?? null;
     const sameUser = !!u && live.current.user?.id === u.id;
     live.current.user = u; setUser(u); setAuthReady(true);
-    if (!u) { live.current.ws = null; clearReceipts(); return; }
+    if (!u) {   // ออกจากระบบ: ล้างทุกอย่างของคนเก่า (กันคนถัดไปในแท็บเดียวกันเห็น)
+      live.current.ws = null; live.current.workspaces = []; live.current.roles = {};
+      setWorkspaces([]); setRoles({}); setWs(null);
+      setLineLinks(null); setLinkCode(null); setInvites(null);
+      clearReceipts();
+      return;
+    }
     if (sameUser) return;   // token ต่ออายุ/กลับมาที่แท็บ: ไม่ต้องโหลดทั้งหน้าซ้ำ
     await loadWorkspaces(u);
     await Promise.all([loadLineStatus(), refreshViews()]);
@@ -134,19 +140,25 @@ export function useAccount({ live, t, toast, setBusy }: Shared, { load: loadRece
   const createOrg = async (name: string): Promise<boolean> => {
     const n = name.trim();
     if (!n) { toast(t.current("t_need_org")); return false; }
-    const { data, error } = await getSb().rpc("create_org", { org_name: n });
-    if (error) { toast(t.current("t_org_fail", error.message)); return false; }
-    await loadWorkspaces(live.current.user!);
-    live.current.ws = data as string; setWs(data as string); lsSet("slip.ws", data as string);
-    await refreshViews();
-    toast(t.current("t_org_ok"));
-    return true;
+    setBusy("org", true);
+    try {
+      const { data, error } = await getSb().rpc("create_org", { org_name: n });
+      if (error) { toast(t.current("t_org_fail", error.message)); return false; }
+      await loadWorkspaces(live.current.user!);
+      live.current.ws = data as string; setWs(data as string); lsSet("slip.ws", data as string);
+      await refreshViews();
+      toast(t.current("t_org_ok"));
+      return true;
+    } finally { setBusy("org", false); }
   };
 
   const createInvite = async (inviteRole: string) => {
-    const { error } = await getSb().rpc("create_invite", { ws: live.current.ws, invite_role: inviteRole });
-    if (error) { toast(t.current("t_inv_fail", error.message)); return; }
-    await loadInvites();
+    setBusy("invite", true);
+    try {
+      const { error } = await getSb().rpc("create_invite", { ws: live.current.ws, invite_role: inviteRole });
+      if (error) { toast(t.current("t_inv_fail", error.message)); return; }
+      await loadInvites();
+    } finally { setBusy("invite", false); }
   };
 
   const email = user?.email || "";

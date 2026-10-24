@@ -2,6 +2,7 @@
 export type Lang = "en" | "th";
 export const DICT: Record<Lang, Record<string, string | string[]>> = {
   "en": {
+    "t_changed": "changed by someone else, reloaded",
     "t_login_fail": "Sign-in did not complete: {0}",
     "l_h1a": "Send slips in LINE.",
     "l_h1c": "We do the rest.",
@@ -190,6 +191,7 @@ export const DICT: Record<Lang, Record<string, string | string[]>> = {
     "x_sum_row": "Total"
   },
   "th": {
+    "t_changed": "รายการถูกแก้ไขโดยคนอื่น โหลดใหม่แล้ว",
     "t_login_fail": "เข้าสู่ระบบไม่สำเร็จ: {0}",
     "l_h1a": "ส่งสลิปใน LINE",
     "l_h1c": "ที่เหลือระบบจัดการ",

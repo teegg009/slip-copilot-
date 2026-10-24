@@ -3,7 +3,7 @@ import { useState } from "react";
 import { useI18n } from "@/lib/i18n";
 import type { Invite } from "@/lib/types";
 
-export function OrgCard({ onCreate }: { onCreate: (name: string) => Promise<boolean> }) {
+export function OrgCard({ busy, onCreate }: { busy: boolean; onCreate: (name: string) => Promise<boolean> }) {
   const { t } = useI18n();
   const [name, setName] = useState("");
   return (
@@ -11,7 +11,7 @@ export function OrgCard({ onCreate }: { onCreate: (name: string) => Promise<bool
       <div className="head" style={{ marginBottom: 10 }}><div><h2>{t("org_title")}</h2><div className="sub">{t("org_sub")}</div></div></div>
       <div className="row">
         <input type="text" placeholder={t("org_ph")} maxLength={80} value={name} onChange={(e) => setName(e.target.value)} />
-        <button className="primary" onClick={async () => { if (await onCreate(name)) setName(""); }}>{t("create")}</button>
+        <button className="primary" disabled={busy} onClick={async () => { if (await onCreate(name)) setName(""); }}>{t("create")}</button>
       </div>
     </section>
   );
@@ -37,7 +37,7 @@ export function MailCard({ status, busy, onScan }: { status: string; busy: boole
   );
 }
 
-export function InviteCard({ invites, error, onCreate }: { invites: Invite[] | null; error: boolean; onCreate: (role: string) => void }) {
+export function InviteCard({ invites, error, busy, onCreate }: { invites: Invite[] | null; error: boolean; busy: boolean; onCreate: (role: string) => void }) {
   const { t, ROLE } = useI18n();
   const [role, setRole] = useState("employee");
   return (
@@ -48,7 +48,7 @@ export function InviteCard({ invites, error, onCreate }: { invites: Invite[] | n
           <option value="employee">{t("role_employee")}</option>
           <option value="accountant">{t("role_accountant")}</option>
         </select>
-        <button className="primary" onClick={() => onCreate(role)}>{t("inv_btn")}</button>
+        <button className="primary" disabled={busy} onClick={() => onCreate(role)}>{t("inv_btn")}</button>
       </div>
       <div className="invites">
         {error ? t("t_inv_load") : invites && invites.length

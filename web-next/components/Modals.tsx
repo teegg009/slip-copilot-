@@ -7,14 +7,15 @@ import type { MailItem, Receipt } from "@/lib/types";
 // กรอบ modal กลาง: Esc / คลิกพื้นหลัง = ปิด, ย้าย focus เข้าไปข้างใน และคืน focus เมื่อปิด
 function Modal({ onClose, width, children }: { onClose: () => void; width?: string; children: ReactNode }) {
   const card = useRef<HTMLDivElement>(null);
+  const close = useRef(onClose);
+  close.current = onClose;   // อ้างฟังก์ชันล่าสุดโดยไม่ให้ effect ทำงานซ้ำ (ไม่งั้น focus กระโดดกลับช่องแรก)
   useEffect(() => {
     const prev = document.activeElement as HTMLElement | null;
-    const first = card.current?.querySelector<HTMLElement>("input,select,button:not([aria-label='Close'])");
-    first?.focus();
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onClose(); };
+    card.current?.querySelector<HTMLElement>("input,select,button:not([aria-label='Close'])")?.focus();
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") close.current(); };
     document.addEventListener("keydown", onKey);
     return () => { document.removeEventListener("keydown", onKey); prev?.focus?.(); };
-  }, [onClose]);
+  }, []);
   return (
     <div className="modal" role="dialog" aria-modal="true" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-card" ref={card} style={width ? { width } : undefined}>{children}</div>

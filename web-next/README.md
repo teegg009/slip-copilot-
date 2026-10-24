@@ -17,15 +17,18 @@ npm run build                   # ได้โฟลเดอร์ out/
 3. n8n: import `../n8n/email-parse.json` ใหม่ (อนุญาต CORS ของพอร์ต 3001)
 
 ## โครงสร้าง
-- `app/` — layout, หน้าเดียว, `globals.css` 
-- `components/` — Login, Sidebar, Topbar (LINE + เมนูบัญชี), Stats (การ์ด/กราฟ/หมวด), ReceiptsTable, Cards, Modals
-- `lib/useDashboard.ts` — ข้อมูลและการกระทำทั้งหมด (โหลด, อนุมัติ, แก้, ลบ, Excel, Gmail)
+- `app/` — layout, หน้าเดียว, `globals.css`
+- `components/` — Login, Sidebar, Topbar, Stats (การ์ด/กราฟ/หมวด), ReceiptsTable, Cards, Modals
+- `lib/useDashboard.ts` — ประกอบ hook ย่อยใน `lib/dashboard/` เข้าด้วยกัน
+  - `useAccount` ล็อกอิน, workspace/สิทธิ์, LINE, บริษัท, รหัสเชิญ
+  - `useReceipts` ใบเสร็จ: โหลด, อนุมัติ, แก้, ลบ, ดูรูป, Excel
+  - `useMailImport` ดึงใบเสร็จจาก Gmail
+  - `shared` ข้อความแจ้งเตือน และสถานะ "กำลังทำงาน" ของปุ่ม
 - `lib/i18n.tsx`, `lib/dict.ts` — สองภาษา EN/TH
-- `lib/gmail.ts`, `lib/excel.ts` — Gmail และ Excel (โหลดไลบรารีเฉพาะตอนใช้)
+- `lib/gmail.ts`, `lib/excel.ts` — Gmail และ Excel
 
-## จุดเด่น
-- สลับภาษาไม่ดึงข้อมูลใหม่ (วาดใหม่อย่างเดียว)
+## ที่ควรรู้
+- สิทธิ์จริงอยู่ที่ฐานข้อมูล (RLS) หน้าเว็บแค่ซ่อน/แสดงปุ่มตามสิทธิ์
 - ไลบรารี Excel โหลดตอนกดดาวน์โหลดเท่านั้น
-- ดึงอีเมลจาก Gmail พร้อมกัน 4 ฉบับ และเพิกถอนสิทธิ์ Gmail ทันทีหลังสแกน
-- modal ปิดด้วย Esc ได้ทุกอัน และคืน focus เมื่อปิด
-- token ที่ต่ออายุเองไม่ทำให้โหลดทั้งหน้าซ้ำ
+- Gmail: ขอสิทธิ์อ่านอย่างเดียวชั่วคราว และเพิกถอนทันทีหลังสแกน
+- สถิติบนหน้าแรกคำนวณจากใบเสร็จล่าสุด 200 รายการที่โหลดมา (ข้อจำกัดที่รู้อยู่)

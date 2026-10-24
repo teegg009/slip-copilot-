@@ -1,5 +1,5 @@
 "use client";
-import { useCallback, useState } from "react";
+import { useCallback, useRef, useState } from "react";
 import { getSb } from "../supabase";
 import { useI18n } from "../i18n";
 import { localISO } from "../format";
@@ -16,6 +16,7 @@ export type EditForm = { vendor: string; date: string; amount: string; cat: stri
 
 // ใบเสร็จของ workspace ที่เลือก: โหลด / อนุมัติ / แก้ / ลบ / ดูรูป / Excel
 export function useReceipts({ live, t, toast, setBusy }: Shared) {
+  const inFlight = useRef(new Set<string>());   // ใบที่กำลังอนุมัติ/ปฏิเสธอยู่ (อ่านได้ทันที ไม่ต้องรอวาดใหม่)
   const i18n = useI18n();
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [rcError, setRcError] = useState<string | null>(null);
@@ -44,17 +45,19 @@ export function useReceipts({ live, t, toast, setBusy }: Shared) {
 
   // อนุมัติ/ปฏิเสธได้เฉพาะถ้าแถวยังเป็นยอดและสถานะที่ผู้ใช้เห็นอยู่ (กันกดทับการแก้ไขของคนอื่นระหว่างรอ)
   const review = async (id: string, act: "approved" | "rejected") => {
-    setBusy("act:" + id, true);
-    const shown = receipts.find((x) => x.id === id);
-    let q = getSb().from("receipts")
-      .update({ status: act, decided_by: live.current.user!.id, decided_at: new Date().toISOString() })
-      .eq("id", id).eq("workspace_id", live.current.ws);
-    if (shown) q = q.eq("amount", shown.amount).eq("status", shown.status);
-    const { data, error } = await q.select("id");
-    setBusy("act:" + id, false);
-    if (error) { toast(t.current("t_save_fail", error.message)); return; }
-    if (!data || !data.length) toast(t.current("t_save_fail", "changed by someone else, reloaded"));
-    await load();
+    if (inFlight.current.has(id)) return;   // กดซ้ำระหว่างรอ: ไม่ส่งซ้ำ
+    inFlight.current.add(id); setBusy("act:" + id, true);
+    try {
+      const shown = receipts.find((x) => x.id === id);
+      let q = getSb().from("receipts")
+        .update({ status: act, decided_by: live.current.user!.id, decided_at: new Date().toISOString() })
+        .eq("id", id).eq("workspace_id", live.current.ws);
+      if (shown) q = q.eq("amount", shown.amount).eq("status", shown.status);
+      const { data, error } = await q.select("id");
+      if (error) { toast(t.current("t_save_fail", error.message)); return; }
+      if (!data || !data.length) toast(t.current("t_save_fail", t.current("t_changed")));
+      await load();
+    } finally { inFlight.current.delete(id); setBusy("act:" + id, false); }
   };
 
   // ฝั่งเว็บส่งเฉพาะฟิลด์ที่แก้ได้; สิทธิ์จริงและฟิลด์ที่ห้ามเปลี่ยนบังคับที่ฐานข้อมูล (supabase/receipt_edit.sql)
@@ -102,12 +105,12 @@ export function useReceipts({ live, t, toast, setBusy }: Shared) {
     return data.signedUrl;
   }, [t, toast]);
 
-  const fetchAll = async (): Promise<ExportRow[]> => {
+  const fetchAll = async (workspaceId: string): Promise<ExportRow[]> => {
     const all: ExportRow[] = [];
     for (let from = 0; from < EXPORT_CEILING; from += EXPORT_PAGE) {
       const { data, error } = await getSb().from("receipts")
         .select("txn_date,txn_time,vendor,category,amount,source,status,review_reason,ref_no,items,note")
-        .eq("workspace_id", live.current.ws).order("txn_date").order("created_at").order("id").range(from, from + EXPORT_PAGE - 1);
+        .eq("workspace_id", workspaceId).order("txn_date").order("created_at").order("id").range(from, from + EXPORT_PAGE - 1);
       if (error) throw error;
       all.push(...(data as unknown as ExportRow[]));
       if (data.length < EXPORT_PAGE) break;
@@ -120,7 +123,7 @@ export function useReceipts({ live, t, toast, setBusy }: Shared) {
     if (!w) return;
     setBusy("excel", true);
     try {
-      const rows = await fetchAll();
+      const rows = await fetchAll(w.id);   // ล็อก workspace ไว้ตั้งแต่ต้น แม้ผู้ใช้สลับระหว่างดึงข้อมูล
       if (!rows.length) { toast(t.current("t_xl_none")); return; }
       await downloadExcel(rows, w.name, i18n);
       toast(t.current("t_xl_done", rows.length));
