@@ -1,82 +1,118 @@
 # Slip Copilot
 
-Send a photo of a receipt or bank slip to a LINE bot. Gemini reads it, the result is checked and saved to Supabase, and you manage everything from a web dashboard.
+Send a photo of a receipt or bank slip to a LINE bot. The app reads it, saves it, and shows it on a web dashboard.
 
-It supports personal and company workspaces (admin, accountant, employee), importing receipts from Gmail (personal workspaces only) and exporting to Excel. The dashboard is in English and Thai; the bot replies in Thai.
+## What it does
 
-This is a portfolio project that I use with a few friends. It is not meant for production (see [Limitations](#limitations)).
+- Reads the shop, date and amount from a slip photo (using Google Gemini)
+- Saves the receipt and the image to Supabase
+- Lets you approve, edit or delete receipts on a web dashboard
+- Supports a personal space and company spaces with roles (admin, accountant, employee)
+- Finds receipts in your Gmail (personal space only)
+- Exports to Excel
+- Dashboard in English and Thai. The bot replies in Thai.
+
+This is a portfolio project that I use with a few friends. It is not made for production use.
 
 ## How it works
 
 ```
-LINE  ──► n8n (LINE webhook) ──► Gemini ──► Supabase (Postgres + RLS + Storage) ◄── Next.js dashboard
-Gmail ──► dashboard ──► n8n (email parser) ──► Gemini ──► dashboard ──► Supabase
+LINE photo -> n8n -> Gemini -> check in code -> Supabase <- web dashboard
 ```
 
-- The LINE workflow checks the webhook signature, finds the sender's workspace, reads the image with Gemini, validates the result in code (dates, amounts, currency, duplicates), stores the image in a private bucket and inserts the receipt.
-- Whether a receipt is approved automatically or waits for review is decided by a database trigger, based on the model's confidence and the workspace's amount limit.
-- Access control is done in Postgres with Row Level Security and triggers, not in the web app. The dashboard only uses a publishable key and the signed-in user's token.
-- Secret keys (Supabase service role, Gemini, LINE) live only in n8n credentials.
+1. You send a slip photo to the LINE bot.
+2. n8n sends the image to Gemini, which returns the shop, date and amount.
+3. Code checks the result (valid date, amount above 0, no duplicates).
+4. The receipt is saved to Supabase. The database decides if it is approved right away or needs review.
+5. You see it on the dashboard.
 
-## Stack
+Who can see or change what is controlled by the database (Postgres Row Level Security), not by the web page. Secret keys are kept only in n8n.
 
-LINE Messaging API, n8n, Google Gemini, Supabase (Postgres, RLS, Storage, Google sign-in), Next.js (App Router, static export) with TypeScript, Gmail API (read-only), SheetJS.
+## Tech
 
-## Getting started
+LINE Messaging API, n8n, Google Gemini, Supabase (Postgres, Storage, Google sign-in), Next.js with TypeScript, Gmail API, SheetJS.
 
-You need a Supabase project, n8n, a LINE Messaging API channel, a Gemini API key, a Google OAuth client and Node.js 20+.
+## Setup
 
-**1. Database.** In the Supabase SQL editor, run these files one at a time (paste the whole file):
+You need: a Supabase project, n8n, a LINE Messaging API channel, a Gemini API key, a Google OAuth client, and Node.js 20 or newer.
 
-```
-schema.sql, line_functions.sql, storage_policy.sql, email_personal_only.sql,
-receipt_edit.sql, hardening.sql, hardening2.sql
-```
+**1. Database**
 
-Then run `verify_install.sql`. Every row should be `true`.
+In the Supabase SQL editor, run these files one at a time. Paste the whole file each time.
 
-**2. n8n.** The workflows in `n8n/` use placeholders (`YOUR-PROJECT`, `YOUR_SUPABASE_PUBLISHABLE_KEY`). Fill them in (or keep a filled copy in `n8n/local/`, which is git-ignored), import `line-v3.json` and `email-parse.json`, attach your credentials, put the LINE channel secret in the `Sign` node and publish. To receive LINE webhooks on your machine, expose n8n with a tunnel (for example `ngrok http 5678`) and set the webhook URL to `https://<tunnel-domain>/webhook/line-v3`.
+1. `schema.sql`
+2. `line_functions.sql`
+3. `storage_policy.sql`
+4. `email_personal_only.sql`
+5. `receipt_edit.sql`
+6. `hardening.sql`
+7. `hardening2.sql`
 
-**3. Web app.**
+Then run `verify_install.sql`. Every row should say `true`.
+
+**2. n8n**
+
+1. In `n8n/line-v3.json` and `n8n/email-parse.json`, replace `YOUR-PROJECT` and `YOUR_SUPABASE_PUBLISHABLE_KEY` with your own values. (You can keep a filled-in copy in `n8n/local/`. It is ignored by git.)
+2. Import both files into n8n.
+3. Add your credentials (Supabase, Gemini, LINE).
+4. Put your LINE channel secret in the `Sign` node.
+5. Publish both workflows.
+
+To receive LINE messages on your own computer, run a tunnel such as `ngrok http 5678`. Then set the LINE webhook URL to `https://<your-tunnel-domain>/webhook/line-v3`.
+
+**3. Web app**
 
 ```bash
 cd web-next
-cp .env.example .env.local    # public values only
+cp .env.example .env.local
 npm install
-npm run dev                   # http://localhost:3001
+npm run dev
 ```
 
-Add `http://localhost:3001` to the Redirect URLs in Supabase and to the Authorized JavaScript origins of your Google OAuth client (needed for the Gmail scan). Never put a service role key or a client secret in `.env.local`; the app refuses to start if it finds one.
+Open http://localhost:3001.
 
-## Usage
+Also add `http://localhost:3001` in two places:
+- Supabase: Authentication, URL Configuration, Redirect URLs
+- Google Cloud: your OAuth client, Authorized JavaScript origins (needed for the Gmail scan)
 
-**Owner or admin (web):** sign in with Google, link LINE (LINE chip in the top bar, create a code, then send `ผูก <code>` to the bot), optionally create a company and invite people with invite codes, then review receipts (approve, reject, edit, delete, view the slip) and download Excel. In a personal workspace you can also scan Gmail and import what you select.
+Do not put a service role key or a client secret in `.env.local`. The app will not start if it finds one.
 
-**Employee or friend (LINE only):** send `เข้าร่วม <invite code>` to the bot, then send slip photos. Use `ใช้ส่วนตัว` or `ใช้ <company name>` to choose where slips go.
+## How to use
+
+**Owner or admin (on the web)**
+1. Sign in with Google.
+2. Link LINE: click the LINE button at the top, create a code, then send `ผูก <code>` to the bot.
+3. For a team: create a company and make invite codes.
+4. Review receipts: approve, reject, edit, delete, or view the slip.
+5. Download Excel, or scan Gmail in your personal space.
+
+**Employee or friend (in LINE only)**
+1. Send `เข้าร่วม <invite code>` to the bot.
+2. Send slip photos.
+3. Use `ใช้ส่วนตัว` (personal) or `ใช้ <company name>` to choose where slips go.
 
 ## Tests
 
-- SQL: `supabase/test_rls.sql`, `supabase/test_line.sql`, and a test block at the end of each hardening script. They run in a transaction and roll back.
-- Web: `npm run typecheck` and `npm run build` in `web-next/`.
-- Bot: `n8n/simulate_line.py` sends signed fake LINE events to a webhook.
+- SQL tests: `supabase/test_rls.sql` and `supabase/test_line.sql`. They roll back, so they leave no data.
+- Web: run `npm run typecheck` and `npm run build` in `web-next/`.
+- Bot: `n8n/simulate_line.py` sends fake LINE messages to the webhook.
 
-## Repository
+## Folders
 
-```
-supabase/   schema, RLS policies, LINE functions, SQL tests
-n8n/        LINE bot and email parser workflows
-web-next/   Next.js dashboard
-```
+- `supabase/` - database files and SQL tests
+- `n8n/` - the two workflows
+- `web-next/` - the dashboard
 
 ## Limitations
 
-- n8n and the tunnel run on my machine, and AI usage depends on a free quota.
-- Dashboard totals are computed from the 200 most recent receipts.
-- The email parser webhook has no per-user rate limit.
+- n8n and the tunnel run on my own computer.
+- AI usage depends on a free quota.
+- Dashboard totals use the 200 most recent receipts.
+- The email parser has no rate limit per user.
 
-## Origin
+## Background
 
-I started this in AI Future Quest 2026 (DXC Technology and HPE, 6 Oct 2026), where I competed as part of a team. After the event I continued on my own and built what is in this repository.
+I started this in AI Future Quest 2026 (DXC Technology and HPE, 6 Oct 2026), where I took part as a team. After the event I kept working on it alone and built what is in this repository.
 
 ## License
 
