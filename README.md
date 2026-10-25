@@ -1,69 +1,83 @@
 # Slip Copilot
 
-ส่งรูปสลิป/ใบเสร็จเข้า LINE bot → AI (Gemini) อ่านร้าน วันที่ ยอด → เก็บใน Supabase → ดูและจัดการบนเว็บแดชบอร์ด
-รองรับหลาย workspace (ส่วนตัว + บริษัทที่มีบทบาท admin / accountant / employee) และดึงใบเสร็จจาก Gmail (เฉพาะส่วนตัว) ส่งออก Excel ได้
+Send a photo of a receipt or bank slip to a LINE bot. Gemini reads it, the result is checked and saved to Supabase, and you manage everything from a web dashboard.
 
-## ที่มา
-ไอเดียตั้งต้นมาจากการแข่งขัน **AI Future Quest 2026** (DXC Technology × HPE, 6 ต.ค. 2026, มหาวิทยาลัยรังสิต)
-ที่ผมลงแข่งเป็นทีม หลังจบงานผมพัฒนาต่อเองจนเป็นระบบที่ใช้งานได้จริง โดยเพิ่ม
-Supabase พร้อมระบบสิทธิ์, หลาย workspace (ส่วนตัว/บริษัท), แดชบอร์ดเว็บ, การดึงใบเสร็จจากอีเมล และการ export Excel
+It supports personal and company workspaces (admin, accountant, employee), importing receipts from Gmail (personal workspaces only) and exporting to Excel. The dashboard is in English and Thai; the bot replies in Thai.
+
+This is a portfolio project that I use with a few friends. It is not meant for production (see [Limitations](#limitations)).
+
+## How it works
 
 ```
-LINE  ──► n8n (line-v3) ──► Gemini ──► Supabase (Postgres + RLS + Storage) ◄── web-next (Next.js)
-Gmail ──► web-next ──► n8n (email-parse) ──► Gemini ──► web-next ──► Supabase
+LINE  ──► n8n (LINE webhook) ──► Gemini ──► Supabase (Postgres + RLS + Storage) ◄── Next.js dashboard
+Gmail ──► dashboard ──► n8n (email parser) ──► Gemini ──► dashboard ──► Supabase
 ```
 
-## วิธีใช้
-**เจ้าของ / แอดมิน (บนเว็บ)**
-1. เข้าสู่ระบบด้วย Google ระบบสร้างพื้นที่ส่วนตัวให้อัตโนมัติ
-2. เชื่อม LINE: กดปุ่ม LINE ที่แถบบน → "สร้างรหัสเชื่อม LINE" แล้วพิมพ์ `ผูก <รหัส 6 หลัก>` ในแชทบอท (รหัสใช้ได้ครั้งเดียว หมดอายุใน 10 นาที)
-3. ต้องการเก็บใบเสร็จของทีม: สร้างบริษัท (เมนู Company) แล้วเมนู "เชิญพนักงาน" เลือกบทบาท (ฝ่ายบัญชี / พนักงาน) เพื่อสร้างรหัสเชิญ ส่งรหัสให้คนนั้น (ใช้ได้ 7 วัน)
-4. ตรวจรายการ: ใบที่รอตรวจ (AI มั่นใจต่ำ หรือยอดเกินเกณฑ์) กด อนุมัติ / ปฏิเสธ, กดดินสอเพื่อแก้ร้าน วันที่ ยอด หมวด, กดถังขยะเพื่อลบ, กด "ดูสลิป" เพื่อเปิดรูป
-5. กด Download Excel เพื่อได้ไฟล์สรุปรายเดือนและรายการทั้งหมด
-6. (เฉพาะส่วนตัว) เมนู "ใบเสร็จจากอีเมล" สแกน Gmail แล้วเลือกรายการที่จะนำเข้า
+- The LINE workflow checks the webhook signature, finds the sender's workspace, reads the image with Gemini, validates the result in code (dates, amounts, currency, duplicates), stores the image in a private bucket and inserts the receipt.
+- Whether a receipt is approved automatically or waits for review is decided by a database trigger, based on the model's confidence and the workspace's amount limit.
+- Access control is done in Postgres with Row Level Security and triggers, not in the web app. The dashboard only uses a publishable key and the signed-in user's token.
+- Secret keys (Supabase service role, Gemini, LINE) live only in n8n credentials.
 
-**พนักงาน / เพื่อน (ใน LINE ไม่ต้องล็อกอินเว็บ)**
-1. เพิ่มบอทเป็นเพื่อน แล้วพิมพ์ `เข้าร่วม <รหัสเชิญ 6 หลัก>` ที่ได้รับจากแอดมิน
-2. ส่งรูปสลิป/ใบเสร็จ บอทตอบเป็นการ์ดสรุปร้าน วันที่ ยอด และสถานะ
-3. สลับที่เก็บ: พิมพ์ `ใช้ส่วนตัว` หรือ `ใช้ <ชื่อบริษัท>`
+## Stack
 
-## ระบบคิดอย่างไร
-**ไม่เชื่อผลของ AI ตรงๆ** AI มีหน้าที่อ่านอย่างเดียว ส่วนตรวจและตัดสินใจเป็นโค้ดทั้งหมด
-- โค้ดตรวจวันที่ (แปลง พ.ศ. → ค.ศ., ไม่รับวันในอนาคต), ยอดเงิน (ต้องมากกว่า 0), สกุลเงิน และรหัสอ้างอิง ก่อนบันทึก
-- สถานะ "อนุมัติเอง / รอตรวจ" ตัดสินที่ฐานข้อมูล (trigger) จากความมั่นใจของ AI และยอดเทียบเกณฑ์ของบริษัท ผู้ใช้กำหนดสถานะเองตอนสร้างไม่ได้
-- สลิปซ้ำกันไม่ได้ (เลขอ้างอิงต้องไม่ซ้ำใน workspace เดียวกัน) และอีเมลที่เคยนำเข้าแล้วจะไม่ถูกส่งให้ AI อ่านซ้ำ
-- ผู้ใช้ยืนยันก่อนนำเข้าอีเมลเสมอ
+LINE Messaging API, n8n, Google Gemini, Supabase (Postgres, RLS, Storage, Google sign-in), Next.js (App Router, static export) with TypeScript, Gmail API (read-only), SheetJS.
 
-**สิทธิ์บังคับที่ฐานข้อมูล ไม่ใช่ที่หน้าเว็บ**
-- Row Level Security แยกข้อมูลตาม workspace และบทบาท: พนักงานเห็น/แก้เฉพาะของตัวเองที่ยังไม่อนุมัติ, แอดมินและฝ่ายบัญชีเห็นทั้งบริษัท
-- trigger กันแก้ฟิลด์ที่ห้ามเปลี่ยน (workspace, ผู้ส่ง, รูป, ความมั่นใจ AI) และตั้งผู้อนุมัติจากตัวตนจริง
-- รายการจากอีเมลรับได้เฉพาะ workspace ส่วนตัว (บังคับที่ฐานข้อมูล แม้เรียก API ตรงๆ)
-- บอท LINE เข้าใช้ได้ด้วยรหัสเชิญ 6 หลัก ฟังก์ชันของบอทเรียกได้เฉพาะ service_role และเดารหัสผิดเกิน 5 ครั้งใน 10 นาทีจะถูกบล็อก
-- รูปสลิปอยู่ใน bucket ส่วนตัว เปิดดูผ่านลิงก์ชั่วคราว 5 นาที ตามสิทธิ์ของผู้ใช้
+## Getting started
 
-**ทดสอบ:** `supabase/test_rls.sql`, `test_line.sql` และบล็อกทดสอบท้ายไฟล์ SQL แต่ละไฟล์ (รันแล้ว rollback ไม่ทิ้งข้อมูล)
+You need a Supabase project, n8n, a LINE Messaging API channel, a Gemini API key, a Google OAuth client and Node.js 20+.
 
-## โครงสร้าง
-- `supabase/` — SQL ทั้งหมด (สคีมา, RLS, ฟังก์ชันสำหรับ LINE, นโยบาย Storage, ชุดทดสอบ)
-- `n8n/` — workflow `line-v3.json` (บอท LINE) และ `email-parse.json` (อ่านอีเมล), `simulate_line.py` ส่งอีเวนต์ LINE จำลอง
-- `web-next/` — แดชบอร์ด Next.js + TypeScript (static export) ดูรายละเอียดใน `web-next/README.md`
+**1. Database.** In the Supabase SQL editor, run these files one at a time (paste the whole file):
 
-## ติดตั้ง
-1. สร้างโปรเจกต์ Supabase แล้วรัน SQL ใน SQL Editor ตามลำดับ (ทีละไฟล์ วางทั้งไฟล์ ไม่ต้องเลือกข้อความ):
-   `schema.sql` → `line_functions.sql` → `storage_policy.sql` → `email_personal_only.sql` → `receipt_edit.sql` → `hardening.sql` → `hardening2.sql`
-   จากนั้นรัน `verify_install.sql` ทุกแถวต้องเป็น `true`
-2. n8n: ไฟล์ใน `n8n/` ใช้ค่า placeholder (`YOUR-PROJECT`, `YOUR_SUPABASE_PUBLISHABLE_KEY`) ให้แทนที่ด้วยค่าโปรเจกต์ของคุณก่อน import
-   (หรือทำสำเนาไว้ใน `n8n/local/` ซึ่งไม่ถูก commit) จากนั้น import `line-v3.json` และ `email-parse.json` ตั้ง credential (Supabase service_role, Gemini, LINE token) ใส่ Channel secret ในโหนด Sign แล้ว Publish
-   ถ้าใช้บอท LINE ในเครื่อง ต้องเปิดอุโมงค์ (เช่น `ngrok http 5678`) แล้วตั้ง Webhook URL ใน LINE Developers เป็น `https://<โดเมนของอุโมงค์>/webhook/line-v3`
-3. เว็บ: ใน `web-next/` คัดลอก `.env.example` เป็น `.env.local` แล้วใส่ค่า (SUPABASE_URL, SUPABASE_KEY แบบ publishable, GOOGLE_CLIENT_ID, EMAIL_PARSE_URL) จากนั้นรัน
-   `npm install && npm run dev` เปิด http://localhost:3001 (ต้องเพิ่ม URL นี้ใน Redirect URLs ของ Supabase และ Authorized origins ของ Google)
+```
+schema.sql, line_functions.sql, storage_policy.sql, email_personal_only.sql,
+receipt_edit.sql, hardening.sql, hardening2.sql
+```
 
-## ความปลอดภัย
-- `.env.local` ต้องมีเฉพาะ publishable key และ Client ID ห้ามใส่ service_role หรือ client secret (ไฟล์นี้ไม่ถูก commit)
-- กุญแจลับทั้งหมด (service_role, Gemini, LINE) อยู่ใน credential ของ n8n เท่านั้น
+Then run `verify_install.sql`. Every row should be `true`.
+
+**2. n8n.** The workflows in `n8n/` use placeholders (`YOUR-PROJECT`, `YOUR_SUPABASE_PUBLISHABLE_KEY`). Fill them in (or keep a filled copy in `n8n/local/`, which is git-ignored), import `line-v3.json` and `email-parse.json`, attach your credentials, put the LINE channel secret in the `Sign` node and publish. To receive LINE webhooks on your machine, expose n8n with a tunnel (for example `ngrok http 5678`) and set the webhook URL to `https://<tunnel-domain>/webhook/line-v3`.
+
+**3. Web app.**
+
+```bash
+cd web-next
+cp .env.example .env.local    # public values only
+npm install
+npm run dev                   # http://localhost:3001
+```
+
+Add `http://localhost:3001` to the Redirect URLs in Supabase and to the Authorized JavaScript origins of your Google OAuth client (needed for the Gmail scan). Never put a service role key or a client secret in `.env.local`; the app refuses to start if it finds one.
+
+## Usage
+
+**Owner or admin (web):** sign in with Google, link LINE (LINE chip in the top bar, create a code, then send `ผูก <code>` to the bot), optionally create a company and invite people with invite codes, then review receipts (approve, reject, edit, delete, view the slip) and download Excel. In a personal workspace you can also scan Gmail and import what you select.
+
+**Employee or friend (LINE only):** send `เข้าร่วม <invite code>` to the bot, then send slip photos. Use `ใช้ส่วนตัว` or `ใช้ <company name>` to choose where slips go.
+
+## Tests
+
+- SQL: `supabase/test_rls.sql`, `supabase/test_line.sql`, and a test block at the end of each hardening script. They run in a transaction and roll back.
+- Web: `npm run typecheck` and `npm run build` in `web-next/`.
+- Bot: `n8n/simulate_line.py` sends signed fake LINE events to a webhook.
+
+## Repository
+
+```
+supabase/   schema, RLS policies, LINE functions, SQL tests
+n8n/        LINE bot and email parser workflows
+web-next/   Next.js dashboard
+```
+
+## Limitations
+
+- n8n and the tunnel run on my machine, and AI usage depends on a free quota.
+- Dashboard totals are computed from the 200 most recent receipts.
+- The email parser webhook has no per-user rate limit.
+
+## Origin
+
+I started this in AI Future Quest 2026 (DXC Technology and HPE, 6 Oct 2026), where I competed as part of a team. After the event I continued on my own and built what is in this repository.
 
 ## License
-MIT — ดูไฟล์ [LICENSE](LICENSE)
 
-## ข้อจำกัด
-โปรเจกต์สำหรับ portfolio / ใช้กับเพื่อนที่ไว้ใจ ไม่ใช่ระบบ production: n8n และอุโมงค์รันในเครื่อง, ตารางแสดงใบเสร็จล่าสุด 200 รายการ, ใช้ AI ภายใต้โควตาฟรี
+[MIT](LICENSE)
